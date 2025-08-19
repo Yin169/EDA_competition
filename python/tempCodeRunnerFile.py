@@ -1,2 +1,1 @@
-
-path = 'data/initial_struct_vertex_material.csv'
+compute_spectral_sparse_loss
