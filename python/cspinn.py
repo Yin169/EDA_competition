@@ -317,7 +317,7 @@ def main():
     # 参数设置
     x_range = [0, 1]
     t_range = [0, 1]
-    N_x = 1000  # 空间离散点数
+    N_x = 100  # 空间离散点数
     N_t = 1000  # 时间离散点数
     nu = 0.01 / np.pi  # 粘性系数
     sparse_ratio = 0.05  # 稀疏测量的比例
@@ -337,7 +337,7 @@ def main():
     # 创建并训练求解器
     solver = PhysicsInformedCompressedSensing(x, t, u_exact, observed_mask, nu, lambda_sparse=0.01)
     losses, data_losses, physics_losses, sparse_losses = solver.train(
-        n_epochs=2000, lambda_data=1.0, lambda_phys=0.1
+        n_epochs=4000, lambda_data=1.0, lambda_phys=0.1
     )
     
     # 预测完整解
