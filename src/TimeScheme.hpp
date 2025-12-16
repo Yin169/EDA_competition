@@ -1,6 +1,8 @@
 #ifndef __TIME_SCHEME_HPP__
 #define __TIME_SCHEME_HPP__
 
+#include "ILU.hpp"
+
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Sparse>
 #include <eigen3/Eigen/SparseLU>
@@ -47,6 +49,7 @@ public:
 protected:
     const double dt;
     const double dx;
+    AsyncILU ilu = AsyncILU(20, 1e-8);
 
     inline int getIndex(int x, int y, int z, int GRID_SIZE) const {
         static const int GRID_SIZE_SQ = GRID_SIZE * GRID_SIZE;
@@ -165,7 +168,8 @@ public:
         Eigen::VectorXd b = phi;
         Eigen::VectorXd phi_next;
         
-        phi_next = solveStandard(b, solver);
+        // phi_next = solveStandard(b, solver);
+        phi_next = preconditionedGMRES(A, b, ilu, 1000, 30, 1e-10);
         
         return phi_next;
     }
@@ -175,11 +179,12 @@ private:
     void setupSolver (
         Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
         const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) override {
-        solver.setMaxIterations(1000);
-        solver.setTolerance(1e-8);
-        solver.compute(A);
+        // solver.setMaxIterations(1000);
+        // solver.setTolerance(1e-8);
+        // solver.compute(A);
+        ilu.compute(A, omp_get_max_threads());
     }
-    
+
     Eigen::VectorXd solveStandard(const Eigen::VectorXd& b,
                                   Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver
                                 ) {
@@ -342,7 +347,8 @@ public:
             }
         }
 
-        Eigen::VectorXd phi_np1 = solveStandard(b, solver);
+        // Eigen::VectorXd phi_np1 = solveStandard(b, solver);
+        Eigen::VectorXd phi_np1 = preconditionedGMRES(A, b, ilu, 1000, 30, 1e-10);
         return phi_np1;
     }
 
@@ -389,10 +395,12 @@ private:
     void setupSolver (
         Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
         const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) override {
-        solver.setMaxIterations(1000);
-        solver.setTolerance(1e-8);
-        solver.compute(A);
+        // solver.setMaxIterations(1000);
+        // solver.setTolerance(1e-8);
+        // solver.compute(A);
+        ilu.compute(A, omp_get_max_threads());
     }
+
     
     Eigen::VectorXd solveStandard(const Eigen::VectorXd& b,
                                   Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver
