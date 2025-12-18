@@ -1,42 +1,60 @@
 cmake_minimum_required(VERSION 3.10)
 project(EDA_competition)
 
+option(USE_EIGEN_SOLVER "Use Eigen BiCGSTAB solver" OFF)
+option(USE_GMRES "Use GMRES with ILU preconditioner" OFF)
+option(USE_SPARSE_LU "Use SparseLU solver" OFF)
+option(USE_DDGMRES "Use Domain Decomposition GMRES" OFF)
+
+if(USE_EIGEN_SOLVER)
+    add_definitions(-DEIGEN_SOLVER)
+endif()
+if(USE_GMRES)
+    add_definitions(-DGMRES)
+endif()
+if(USE_SPARSE_LU)
+    add_definitions(-DSpLU)
+endif()
+if(USE_DDGMRES)
+    add_definitions(-DDDGMRES)
+endif()
+
+# 设置静态链接
+set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+set(BUILD_SHARED_LIBS OFF)
+set(CMAKE_EXE_LINKER_FLAGS "-static")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -Wextra")
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    # For Clang (macOS default compiler)
-    add_compile_options(-fsanitize=address)
-    add_link_options(-fsanitize=address)
+# 强制静态链接标准库
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif()
 
-# Ensure debug symbols are included
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
-
+# 寻找静态库
 find_package(CGAL REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(CERES REQUIRED)
-find_package(OpenMP)
 
-if(OpenMP_CXX_FOUND)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-endif()
+# Find and configure OpenMP for multi-threading support
+find_package(OpenMP REQUIRED)
 
 add_executable(levelset src/levelset_main.cpp)
-target_link_libraries(levelset ${EIGEN3_LIBRARIES} ${CGAL_LIBRARIES} ${CERES_LIBRARIES})
+
+# 设置目标属性为静态链接
+set_target_properties(levelset PROPERTIES LINK_SEARCH_START_STATIC 1)
+set_target_properties(levelset PROPERTIES LINK_SEARCH_END_STATIC 1)
+
+# 链接库
+target_link_libraries(levelset Eigen3::Eigen CGAL::CGAL)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(levelset OpenMP::OpenMP_CXX)
 endif()
 
+# 额外的静态链接设置
+if(UNIX AND NOT APPLE)
+    target_link_libraries(levelset -static-libgcc -static-libstdc++)
+endif()
 
-add_executable(test test/test.cpp)
-target_link_libraries(test ${CGAL_LIBRARIES} ${EIGEN3_LIBRARIES}) 
-
-# add_executable(main src/main.cpp src/DFISEParser.hpp)
-
-# add_executable(alphawrap src/alphawrap.cpp src/output_helper.h)
-# target_link_libraries(alphawrap ${CGAL_LIBRARIES})
+target_compile_options(levelset PRIVATE -O3 -march=native -Wall -Wextra -fopenmp -mavx512f -funroll-loops -ffast-math)

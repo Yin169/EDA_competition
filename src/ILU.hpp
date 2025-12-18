@@ -1,3 +1,4 @@
+
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
 #include <omp.h>
@@ -7,7 +8,7 @@
 #include <algorithm>
 
 using namespace Eigen;
-typedef SparseMatrix<double> SpMat;
+typedef Eigen::SparseMatrix<double, Eigen::RowMajor> SpMat;
 typedef VectorXd Vec;
 
 /**
@@ -27,7 +28,7 @@ public:
     AsyncILU(int maxIter = 10, double tol = 1e-6) 
         : maxIter_(maxIter), tol_(tol) {}
     
-    void compute(const SpMat& A, int numThreads = 4) {
+    void compute(const SpMat& A) {
         n_ = A.rows();
         
         // 初始化L, U, D
@@ -56,7 +57,7 @@ public:
         U_.setFromTriplets(U_triplets.begin(), U_triplets.end());
         
         // 异步迭代ILU分解
-        omp_set_num_threads(numThreads);
+        // omp_set_num_threads(numThreads);
         
         for (int iter = 0; iter < maxIter_; ++iter) {
             double maxChange = 0.0;
@@ -346,6 +347,8 @@ Vec preconditionedGMRES(const SpMat& A, const Vec& b, const AsyncILU& precond,
             
             if (H(i + 1, i) > 1e-14) {
                 V[i + 1] = w / H(i + 1, i);
+            } else {
+                break;
             }
             
             // 3. 应用之前的 Givens 旋转
@@ -370,7 +373,7 @@ Vec preconditionedGMRES(const SpMat& A, const Vec& b, const AsyncILU& precond,
             
             double current_error = std::abs(s(i + 1));
             
-            if ((iter + 1) % 10 == 0) {
+            if ((iter + 1) % 3 == 0) {
                 std::cout << "GMRES Iter " << iter + 1 << ", Residual: " << current_error << std::endl;
             }
             
@@ -428,73 +431,3 @@ Vec preconditionedGMRES(const SpMat& A, const Vec& b, const AsyncILU& precond,
     std::cout << "GMRES reached max iterations without full convergence." << std::endl;
     return x;
 }
-// 修改测试函数：生成非对称稀疏矩阵 (对流扩散型)
-// 非对称矩阵才能体现 GMRES 优于 CG 的地方
-SpMat generateNonSymmetricMatrix(int n, int nnzPerRow = 5) {
-    std::vector<Triplet<double>> triplets;
-    
-    for (int i = 0; i < n; ++i) {
-        // 对角元素
-        triplets.push_back(Triplet<double>(i, i, 4.0));
-        
-        // 非对角元素
-        for (int j = 0; j < nnzPerRow - 1; ++j) {
-            int col = (i + j + 1) % n;
-            if (col != i) {
-                // 制造不对称性：如果是 i < col，值不同
-                double val = -1.0 / nnzPerRow;
-                if (i < col) val *= 1.5; // 简单的不对称扰动
-                
-                triplets.push_back(Triplet<double>(i, col, val));
-            }
-        }
-    }
-    
-    SpMat A(n, n);
-    A.setFromTriplets(triplets.begin(), triplets.end());
-    return A;
-}
-
-// int main() {
-//     std::cout << "=== Asynchronous ILU with GMRES Solver ===" << std::endl;
-    
-//     // 设置问题规模 (稍微减小以便演示，原始 10^7 可能在本机跑得慢，可自行调回)
-//     int n = 1000000; 
-//     std::cout << "\nGenerating Non-Symmetric test matrix of size " << n << "x" << n << std::endl;
-    
-//     // 生成非对称测试矩阵
-//     SpMat A = generateNonSymmetricMatrix(n, 7);
-//     std::cout << "Non-zeros in A: " << A.nonZeros() << std::endl;
-    
-//     // 生成测试右端项
-//     Vec b = Vec::Ones(n);
-    
-//     // 执行异步ILU分解
-//     std::cout << "\n--- Performing Asynchronous ILU Decomposition ---" << std::endl;
-//     // 参数: maxIter, tol
-//     AsyncILU ilu(20, 1e-8);
-    
-//     double start = omp_get_wtime();
-//     ilu.compute(A, 4);  // 使用4个线程
-//     double end = omp_get_wtime();
-    
-//     std::cout << "ILU decomposition time: " << (end - start) << " seconds" << std::endl;
-    
-//     // 使用ILU预处理的GMRES求解
-//     std::cout << "\n--- Solving with Preconditioned GMRES(30) ---" << std::endl;
-//     start = omp_get_wtime();
-    
-//     // 参数: A, b, precond, maxIter, restart_m, tol
-//     Vec x = preconditionedGMRES(A, b, ilu, 1000, 30, 1e-10);
-    
-//     end = omp_get_wtime();
-    
-//     std::cout << "GMRES solve time: " << (end - start) << " seconds" << std::endl;
-    
-//     // 验证结果 (使用真实的残差 b - Ax)
-//     Vec residual = b - A * x;
-//     std::cout << "\nFinal residual norm: " << residual.norm() << std::endl;
-//     std::cout << "Relative residual: " << residual.norm() / b.norm() << std::endl;
-    
-//     return 0;
-// }

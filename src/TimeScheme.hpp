@@ -1,11 +1,21 @@
 #ifndef __TIME_SCHEME_HPP__
 #define __TIME_SCHEME_HPP__
 
-#include "ILU.hpp"
+#ifdef DDGMRES
+#include "GMRES.hpp"
+#endif
 
-#include <eigen3/Eigen/Dense>
-#include <eigen3/Eigen/Sparse>
-#include <eigen3/Eigen/SparseLU>
+#ifdef GMRES
+#include "ILU.hpp"
+#endif
+
+#ifdef SpLU
+#include "LU.hpp"
+#endif
+
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+
 #include <memory>
 #include <vector>
 #include <string>
@@ -31,12 +41,9 @@ public:
         const Eigen::VectorXd& Ux,
         const Eigen::VectorXd& Uy,
         const Eigen::VectorXd& Uz,
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
         int gridSize) = 0;
 
-    virtual void setupSolver (
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
-        const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) = 0;
+    virtual void setupSolver (const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) = 0;
 
     virtual Eigen::SparseMatrix<double> GenMatrixA(
         const Eigen::VectorXd& phi,
@@ -49,7 +56,16 @@ public:
 protected:
     const double dt;
     const double dx;
+
+#ifdef EIGEN_SOLVER
+    Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>> solver; 
+#endif
+#ifdef GMRES
     AsyncILU ilu = AsyncILU(20, 1e-8);
+#endif
+#ifdef SpLU
+    std::unique_ptr<HPSparseLU> solver;
+#endif
 
     inline int getIndex(int x, int y, int z, int GRID_SIZE) const {
         static const int GRID_SIZE_SQ = GRID_SIZE * GRID_SIZE;
@@ -161,33 +177,51 @@ public:
         const Eigen::VectorXd& Ux,
         const Eigen::VectorXd& Uy,
         const Eigen::VectorXd& Uz,
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
         int gridSize 
     ) override {
         
         Eigen::VectorXd b = phi;
-        Eigen::VectorXd phi_next;
         
-        // phi_next = solveStandard(b, solver);
-        phi_next = preconditionedGMRES(A, b, ilu, 1000, 30, 1e-10);
+#ifdef EIGEN_SOLVER
+        Eigen::VectorXd phi_next = solveStandard(b);
+#endif
+
+#ifdef GMRES
+        Eigen::VectorXd phi_next = preconditionedGMRES(A, b, ilu, 1000, 30, 1e-8);
+#endif
+
+#ifdef DDGMRES
+        Eigen::VectorXd phi_next = parallelDomainDecompositionGMRES(A, b);
+#endif
+
+#ifdef SpLU
+        Eigen::VectorXd phi_next = solver->solve(b);
+#endif
         
         return phi_next;
     }
     
 private:
 
-    void setupSolver (
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
-        const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) override {
-        // solver.setMaxIterations(1000);
-        // solver.setTolerance(1e-8);
-        // solver.compute(A);
-        ilu.compute(A, omp_get_max_threads());
-    }
+    void setupSolver (const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) override {
 
-    Eigen::VectorXd solveStandard(const Eigen::VectorXd& b,
-                                  Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver
-                                ) {
+#ifdef EIGEN_SOLVER
+        solver.setMaxIterations(1000);
+        solver.setTolerance(1e-8);
+        solver.compute(A);
+#endif 
+#ifdef GMRES
+        ilu.compute(A);
+#endif
+
+#ifdef SpLU
+        solver = std::make_unique<HPSparseLU>(A.rows());
+        solver->factorize(A);
+#endif
+    }
+ 
+#ifdef EIGEN_SOLVER
+    Eigen::VectorXd solveStandard(const Eigen::VectorXd& b) {
         
         if (solver.info() != Eigen::Success) {
             std::cerr << "Matrix decomposition failed with error: " << solver.error() << std::endl;
@@ -205,6 +239,7 @@ private:
         
         return x;
     }
+#endif
 
 };
 
@@ -316,7 +351,6 @@ public:
                             const Eigen::VectorXd& Ux,
                             const Eigen::VectorXd& Uy,
                             const Eigen::VectorXd& Uz,
-                            Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
                             int gridSize) override {
         const int n = phi_n.size();
         double spacing = dx; 
@@ -347,8 +381,20 @@ public:
             }
         }
 
-        // Eigen::VectorXd phi_np1 = solveStandard(b, solver);
-        Eigen::VectorXd phi_np1 = preconditionedGMRES(A, b, ilu, 1000, 30, 1e-10);
+#ifdef EIGEN_SOLVER
+        Eigen::VectorXd phi_np1 = solveStandard(b);
+#endif
+
+#ifdef GMRES
+        Eigen::VectorXd phi_np1 = preconditionedGMRES(A, b, ilu, 1000, 30, 1e-8);
+#endif
+
+#ifdef DDGMRES
+        Eigen::VectorXd phi_np1 = parallelDomainDecompositionGMRES(A, b);
+#endif
+#ifdef SpLU
+        Eigen::VectorXd phi_np1 = solver->solve(b);
+#endif
         return phi_np1;
     }
 
@@ -392,19 +438,23 @@ private:
     }
 
 
-    void setupSolver (
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
-        const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) override {
-        // solver.setMaxIterations(1000);
-        // solver.setTolerance(1e-8);
-        // solver.compute(A);
-        ilu.compute(A, omp_get_max_threads());
+    void setupSolver (const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) override {
+#ifdef EIGEN_SOLVER
+        solver.setMaxIterations(1000);
+        solver.setTolerance(1e-8);
+        solver.compute(A);
+#endif 
+#ifdef GMRES
+        ilu.compute(A);
+#endif
+#ifdef SpLU
+        solver = std::make_unique<HPSparseLU>(A.rows());
+        solver->factorize(A);
+#endif
     }
-
-    
-    Eigen::VectorXd solveStandard(const Eigen::VectorXd& b,
-                                  Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver
-                                ) {
+   
+#ifdef EIGEN_SOLVER
+    Eigen::VectorXd solveStandard(const Eigen::VectorXd& b) {
         
         if (solver.info() != Eigen::Success) {
             std::cerr << "Matrix decomposition failed" << std::endl;
@@ -421,6 +471,7 @@ private:
         
         return x;
     }
+#endif
 };
 
 
@@ -436,10 +487,7 @@ public:
         return Eigen::SparseMatrix<double>(0, 0); // Not used for explicit scheme
     }
 
-    void setupSolver (
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>& solver,
-        const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) override {
-    }
+    void setupSolver (const Eigen::SparseMatrix<double, Eigen::RowMajor>& A ) override {}
     
     Eigen::VectorXd advance(
         const Eigen::SparseMatrix<double, Eigen::RowMajor>&,
@@ -447,7 +495,6 @@ public:
         const Eigen::VectorXd& Ux,
         const Eigen::VectorXd& Uy,
         const Eigen::VectorXd& Uz,
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double, Eigen::RowMajor>>&, 
         int gridSize) override {
         // TVD-RK3 scheme with proper coefficients
         Eigen::VectorXd L1 = computeRHS(phi, Ux, Uy, Uz, gridSize);

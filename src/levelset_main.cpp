@@ -2,7 +2,7 @@
 #include <iostream>
 #include <cmath>
 #include <filesystem>
-#include <eigen3/Eigen/Core>
+#include <Eigen/Core>
 #include <chrono>
 
 namespace fs = std::filesystem;
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
     
     LevelSetMethod levelSet(
         inputFile,
-        200,    // gridSize
+        100,    // gridSize
         1.0,   // timeStep
         60,    // maxSteps
         3,      // reinitInterval

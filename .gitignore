@@ -12,3 +12,7 @@
 *.txt
 *.zip
 *.zip
+/data/DRIVE
+*.gif
+*.pyc
+/EDA_competition-implicit-2/build

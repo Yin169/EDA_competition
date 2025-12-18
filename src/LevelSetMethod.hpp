@@ -1,7 +1,8 @@
 #ifndef LEVEL_SET_METHOD_HPP
 #define LEVEL_SET_METHOD_HPP
 
-#define CGAL_PMP_USE_CERES_SOLVER
+#define EIGEN_USE_OPENMP
+#define EIGEN_USE_MKL_ALL
 
 #include "TimeScheme.hpp"
 
@@ -25,9 +26,9 @@
 #include <CGAL/make_surface_mesh.h>
 #include <CGAL/Surface_mesh.h>
 
-#include <eigen3/Eigen/Dense>
-#include <eigen3/Eigen/Sparse>
-#include <eigen3/Eigen/SparseLU>
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+#include <Eigen/SparseLU>
 #include <memory>
 #include <vector>
 #include <string>
@@ -77,8 +78,10 @@ public:
         timeScheme(timeScheme){
 
         if (numThreads > 0) {
-            omp_set_num_threads(numThreads);
             Eigen::initParallel();
+            omp_set_num_threads(numThreads);
+            Eigen::setNbThreads(numThreads);
+            std::cout << "Eigen N Threads: " << Eigen::nbThreads() << std::endl; 
         }
         
         // Load mesh and material information
