@@ -16,3 +16,5 @@
 *.gif
 *.pyc
 /EDA_competition-implicit-2/build
+*.log
+/EDA_competition-implicit-2/data
